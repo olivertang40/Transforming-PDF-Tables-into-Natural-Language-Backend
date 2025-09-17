@@ -1,0 +1,172 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: guideline-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-guideline_transform}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis for Celery
+  redis:
+    image: redis:7-alpine
+    container_name: guideline-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # MinIO for S3-compatible storage
+  minio:
+    image: minio/minio:latest
+    container_name: guideline-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-minioadmin}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # Create MinIO bucket
+  createbuckets:
+    image: minio/mc:latest
+    container_name: guideline-createbuckets
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc config host add myminio http://minio:9000 minioadmin minioadmin;
+      /usr/bin/mc mb myminio/guideline-transform --ignore-existing;
+      /usr/bin/mc policy set public myminio/guideline-transform;
+      exit 0;
+      "
+
+  # FastAPI Backend
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: guideline-api
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/guideline_transform
+      - REDIS_URL=redis://redis:6379/0
+      - S3_ENDPOINT_URL=http://minio:9000
+      - S3_ACCESS_KEY=${S3_ACCESS_KEY:-minioadmin}
+      - S3_SECRET_KEY=${S3_SECRET_KEY:-minioadmin}
+      - S3_BUCKET=${S3_BUCKET:-guideline-transform}
+      - S3_USE_SSL=false
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-secret-key}
+      - APP_ENV=${APP_ENV:-local}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Celery Worker
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: guideline-worker
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/guideline_transform
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - S3_ENDPOINT_URL=http://minio:9000
+      - S3_ACCESS_KEY=${S3_ACCESS_KEY:-minioadmin}
+      - S3_SECRET_KEY=${S3_SECRET_KEY:-minioadmin}
+      - S3_BUCKET=${S3_BUCKET:-guideline-transform}
+      - S3_USE_SSL=false
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - APP_ENV=${APP_ENV:-local}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - CELERY_WORKER_CONCURRENCY=${CELERY_WORKER_CONCURRENCY:-4}
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=4
+
+  # Celery Flower (optional monitoring)
+  flower:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: guideline-flower
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    ports:
+      - "5555:5555"
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - redis
+    command: celery -A app.workers.celery_app flower --port=5555
+
+  # Frontend (React + Vite)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: guideline-frontend
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8000/api/v1
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - api
+    command: npm run dev
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+
+networks:
+  default:
+    name: guideline-network 
