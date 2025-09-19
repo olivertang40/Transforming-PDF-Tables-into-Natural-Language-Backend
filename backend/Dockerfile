@@ -6,11 +6,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH=/app
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
     libpq-dev \
-    libgl1-mesa-glx \
+    libgl1 \
+    libgl1-mesa-dri || true \
+    && apt-get install -y --no-install-recommends \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
