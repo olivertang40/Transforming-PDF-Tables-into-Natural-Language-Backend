@@ -7,11 +7,13 @@ interface DraftEditorProps {
   taskId: number;
   aiDraft: string;
   onSubmit: (taskId: number, editedContent: string) => void;
+  onRegenerateDraft?: () => void;
 }
 
-export default function DraftEditor({ taskId, aiDraft, onSubmit }: DraftEditorProps) {
+export default function DraftEditor({ taskId, aiDraft, onSubmit, onRegenerateDraft }: DraftEditorProps) {
   const [editedContent, setEditedContent] = useState(aiDraft);
   const [isSaving, setIsSaving] = useState(false);
+  const [isRegenerating, setIsRegenerating] = useState(false);
 
   const handleSaveDraft = () => {
     setIsSaving(true);
@@ -25,6 +27,17 @@ export default function DraftEditor({ taskId, aiDraft, onSubmit }: DraftEditorPr
     onSubmit(taskId, editedContent);
   };
 
+  const handleRegenerate = () => {
+    if (onRegenerateDraft) {
+      setIsRegenerating(true);
+      onRegenerateDraft();
+      // Reset regenerating state after a delay
+      setTimeout(() => {
+        setIsRegenerating(false);
+      }, 3000);
+    }
+  };
+
   const wordCount = editedContent.length;
 
   return (
@@ -32,7 +45,28 @@ export default function DraftEditor({ taskId, aiDraft, onSubmit }: DraftEditorPr
       <div className="mb-6">
         <div className="flex items-center justify-between mb-3">
           <h4 className="text-lg font-medium text-gray-900">AI Generated Draft</h4>
-          <span className="text-sm text-gray-500">Read Only</span>
+          <div className="flex items-center space-x-2">
+            <span className="text-sm text-gray-500">Read Only</span>
+            {onRegenerateDraft && (
+              <button
+                onClick={handleRegenerate}
+                disabled={isRegenerating}
+                className="text-blue-600 hover:text-blue-700 text-sm flex items-center space-x-1 cursor-pointer disabled:opacity-50"
+              >
+                {isRegenerating ? (
+                  <>
+                    <i className="ri-loader-4-line w-4 h-4 flex items-center justify-center animate-spin"></i>
+                    <span>Regenerating...</span>
+                  </>
+                ) : (
+                  <>
+                    <i className="ri-refresh-line w-4 h-4 flex items-center justify-center"></i>
+                    <span>Regenerate</span>
+                  </>
+                )}
+              </button>
+            )}
+          </div>
         </div>
         <div className="bg-gray-50 p-4 rounded-lg border text-sm text-gray-700 max-h-32 overflow-y-auto">
           {aiDraft}

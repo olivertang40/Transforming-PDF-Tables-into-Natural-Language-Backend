@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState } from 'react';
@@ -97,6 +96,7 @@ export default function ReviewPanel({ task, onReview }: ReviewPanelProps) {
           <button
             onClick={handleReject}
             className="flex items-center space-x-1 px-4 py-2 text-sm text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg whitespace-nowrap cursor-pointer"
+            aria-label="Reject this task"
           >
             <i className="ri-close-circle-line w-4 h-4 flex items-center justify-center"></i>
             <span>Reject</span>
@@ -105,6 +105,7 @@ export default function ReviewPanel({ task, onReview }: ReviewPanelProps) {
           <button
             onClick={handlePass}
             className="flex items-center space-x-1 px-4 py-2 text-sm text-white bg-green-600 hover:bg-green-700 rounded-lg whitespace-nowrap cursor-pointer"
+            aria-label="Approve this task"
           >
             <i className="ri-check-circle-line w-4 h-4 flex items-center justify-center"></i>
             <span>Approve</span>
